@@ -1,30 +1,33 @@
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-import time
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.service import Service
 from datetime import datetime
-from personal_modules import log_into_webex, search_button, sort_results, clear_and_search, close__error_notifications
+import time
 import logging
+from personal_modules import log_into_webex, error_to_discord
 
-logging.basicConfig(
-    filename='call_outs.log', encoding='utf-8', level=logging.DEBUG, filemode="w", format="%(asctime)s -> %(levelname)s -> %(message)s"
+logging.basicConfig(encoding='utf-8', level=logging.INFO, filemode="w", format="%(asctime)s -> %(levelname)s -> %(message)s"
     )
 # set chrome and page we want to open
 opt = Options()
-# opt.add_argument('--remote-debugging-port=9222')
+opt.add_argument('--remote-debugging-port=9222')
 opt.add_argument("--lang=en")
 opt.add_experimental_option("detach", True)
-driver = webdriver.Chrome(executable_path = r"C:\Users\wrr20\Desktop\scripts\AutomatedTasks\chrome_data\chromedriver.exe", chrome_options=opt)
-driver.get("https://portal.wxcc-us1.cisco.com/portal/home")
+driver = webdriver.Chrome(
+    service=Service(ChromeDriverManager().install()), options=opt)
+driver.get(
+    "url/example/here"
+    )
 driver.maximize_window()
 
 wait_time = WebDriverWait(driver, 10) # Create a variable with 10 seconds wait time for easier calling
 
-# log in into the page
+# logs into the page
 log_into_webex(driver)
-
 time.sleep(3)
 
 # select the dashboard and its content
@@ -33,10 +36,14 @@ status = "NotDone"
 while status == "NotDone":
     try:
         switch_to_frame = wait_time.until(
-            EC.frame_to_be_available_and_switch_to_it((By.XPATH, "/html/body/div[1]/div[1]/div/section/div/div/div/div/div[2]/div/div/iframe"))
+            EC.frame_to_be_available_and_switch_to_it(
+            (By.XPATH, "/html/body/div[1]/div[1]/div/section/div/div/div/div/div[2]/div/div/iframe")
+            )
         )
         # click dropdown menu
-        click_dropdown = driver.find_element(By.ID, "select2-dashboardType-container")
+        click_dropdown = driver.find_element(
+            By.ID, "select2-dashboardType-container"
+            )
         click_dropdown.click()
 
         time.sleep(3)
@@ -49,12 +56,15 @@ while status == "NotDone":
         
         status = "Done"
         time.sleep(10)
+        error_to_discord("Entered the dashboard without issues..")
 
-    except Exception as e:
-        logging.exception(
-            "There was an error, reopening script.."
+    except Exception as error:
+        error_to_discord(
+            "**While entering the dashboard ->** " + str(error) + "\nTrying again.."
             )
         status = "NotDone"
+        time.sleep(5)
+
 logging.info("\nDone..")
 
 time.sleep(3)
@@ -95,11 +105,10 @@ while check_all_good == False:
         search = driver.find_element(By.ID, "search")
         search.click()
         check_all_good = True
+        error_to_discord("Filtered teams without issues..")
 
-    except Exception as e:
-        logging.exception(
-            "\nThere was an error, reopening script.."
-            )
+    except Exception as error:
+        error_to_discord("**While filtering teams ->** " + str(error) + "\n Trying again..")
 logging.info("\nDone..")
 
 # Sort by largest to smallest
@@ -129,22 +138,20 @@ def clear_and_search(auxiliar):
     done = False
     while done == False:
         try:
+            time.sleep(10)
             logging.info(f"Searching {auxiliar}..")
-            time.sleep(5)
-            search_aux_bar = driver.find_element(
+            search_aux_bar = wait_time.until(EC.presence_of_element_located((
                 By.XPATH, "/html/body/div[2]/div[2]/div/section/div/div[2]/div/div[1]/div[1]/div[2]/div/label/input"
-                )
+            ))
+            )
             search_aux_bar.clear()
             search_aux_bar.send_keys(auxiliar)
             done = True
-        except:
-            logging.exception(
-                "Couldn't find element, trying again.."
-                )
+        except Exception as error:
             time.sleep(5)
 
 # Refresh dashboard
-def search_button():
+def refresh_results():
         done = False
         while done == False:
             try:
@@ -152,10 +159,9 @@ def search_button():
                 search = driver.find_element(By.ID, "search")
                 search.click()
                 done = True
+                time.sleep(10)
             except:
-                logging.exception(
-                    "Something got in the way, trying again.."
-                    )
+                pass
 
 time.sleep(10)
 import subprocess
@@ -163,11 +169,17 @@ import pyautogui
 from keyboard import press, release
 
 def search_acw():
+    ''' 
+        Goes through each name that matches the search value
+        then checks their duration on said aux
+        and kicks them out if it reaches or passes the limit
+    '''
+
      #close error message if there is any
     close__error_notifications()
 
     # refresh results
-    search_button()
+    refresh_results()
 
     # search for aux
     clear_and_search("After Call Work")
@@ -185,7 +197,7 @@ def search_acw():
     search_aux_bar2_text = search_aux_bar2.get_attribute("value")
     if search_aux_bar2_text != "After Call Work":
         logging.info(
-            "Stopping function, search bar was cleared.."
+            "Stopping action, search bar was cleared.."
             )
         return
 
@@ -206,13 +218,9 @@ def search_acw():
         By.XPATH, "/html/body/div[2]/div[2]/div/section/div/div[2]/div/div[1]/div[2]/div/table/tbody/tr/td[8]/span"
         )
 
-    ''' goes through each name that matches the search
-        then checks their duration on said aux
-        and kicks them out if it matches the limit
-    '''
     if results_elements_text == "":
         logging.info(
-            "Stopping function, no results found.."
+            "Stopping action, no results found.."
             )
         return
     for index in range(0, len(results_elements) + 1, 1):
@@ -237,17 +245,21 @@ def search_acw():
                     last_logged_out += agent_names_texts[index]
                     sign_out[index].click() # log out
 
-            except Exception as e:
-                logging.info(e)
+            except Exception as error:
                 break
     time.sleep(2)
 
 def search_auxiliars(aux):
+    ''' 
+        Goes through each name that matches the search value
+        then checks their duration on said aux
+        and kicks them out if it reaches or passes the limit
+    '''
     #close error message if there is any
     close__error_notifications()
 
     # refresh results
-    search_button()
+    refresh_results()
 
     # search for aux
     clear_and_search(aux)
@@ -257,7 +269,6 @@ def search_auxiliars(aux):
 
     time.sleep(2)
 
-
     # get the search bar's element again so we can check
     # if it was cleared before continuing
     search_aux_bar2 = driver.find_element(
@@ -266,7 +277,7 @@ def search_auxiliars(aux):
     search_aux_bar2_text = search_aux_bar2.get_attribute("value")
     if search_aux_bar2_text != aux:
         logging.info(
-            "Stopping function, search bar was cleared.."
+            "Stopping action, search bar was cleared.."
             )
         return
     
@@ -306,9 +317,6 @@ def search_auxiliars(aux):
         By.XPATH, "/html/body/div[2]/div[2]/div/section/div/div[2]/div/div[1]/div[1]/div[2]/div/label/input"
         )
 
-    # goes through each name that matches the search
-    # then checks their duration on said aux
-    # and kicks them out if it matches the limit
     if results_elements_text == "":
         return
     for index in range(0, len(results_elements) + 1, 1):
